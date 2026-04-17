@@ -275,6 +275,7 @@ const Dashboard = (() => {
             Supported: PDF, JPG, PNG, DOCX, PPT (Max 50MB)
           </small>
         </div>
+        ${isOwner ? `
         <div class="form-group">
           <label for="upload-security">Security Level</label>
           <select id="upload-security" class="form-select">
@@ -282,7 +283,13 @@ const Dashboard = (() => {
             <option value="medium" selected>🟡 Medium</option>
             <option value="high">🔴 High</option>
           </select>
-        </div>
+        </div>` : `
+        <div class="form-group">
+          <label>Security Level</label>
+          <div style="padding: 0.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-muted);">
+            <em>Automatically assigned based on your access level</em>
+          </div>
+        </div>`}
       </form>`,
       `<button class="btn btn-secondary" onclick="Components.closeModal()">Cancel</button>
        <button class="btn btn-primary" onclick="Dashboard.submitUpload()">🔐 Encrypt & Upload</button>`
@@ -292,7 +299,8 @@ const Dashboard = (() => {
   // ─── Submit Upload ────────────────────────────────────────
   const submitUpload = async () => {
     const fileInput = document.getElementById('upload-file');
-    const securityLevel = document.getElementById('upload-security').value;
+    const securitySelect = document.getElementById('upload-security');
+    const securityLevel = securitySelect ? securitySelect.value : 'medium';
 
     const ownerSelect = document.getElementById('upload-owner');
 
@@ -376,14 +384,6 @@ const Dashboard = (() => {
        <div class="form-group">
          <label for="modify-file">Select New File</label>
          <input type="file" id="modify-file" class="form-input" accept=".pdf,.jpg,.jpeg,.png,.docx,.doc,.pptx,.ppt" required>
-       </div>
-       <div class="form-group">
-         <label for="modify-security">Confidentiality Level</label>
-         <select id="modify-security" class="form-select">
-           <option value="low">🟢 Low</option>
-           <option value="medium" selected>🟡 Medium</option>
-           <option value="high">🔴 High</option>
-         </select>
        </div>`,
       `<button class="btn btn-secondary" onclick="Components.closeModal()">Cancel</button>
        <button class="btn btn-primary" onclick="Dashboard.submitModify('${fileId}')">🔐 Encrypt & Replace</button>`
@@ -392,7 +392,6 @@ const Dashboard = (() => {
 
   const submitModify = async (fileId) => {
     const fileInput = document.getElementById('modify-file');
-    const securityLevel = document.getElementById('modify-security').value;
     if (!fileInput?.files[0]) {
       Components.showToast('Please select a file.', 'warning');
       return;
@@ -404,9 +403,41 @@ const Dashboard = (() => {
     try {
       const formData = new FormData();
       formData.append('file', fileInput.files[0]);
-      formData.append('securityLevel', securityLevel);
       await API.uploadPut(`/file/${fileId}`, formData);
       Components.showToast('File modified!', 'success');
+      loadTabContent('files');
+    } catch (err) {
+      Components.showToast(err.message, 'error');
+    } finally {
+      Components.hideLoading();
+    }
+  };
+
+  // ─── Change Security Level (Owner Only) ───────────────────
+  const showChangeSecurityModal = (fileId, currentLevel) => {
+    Components.showModal(
+      '🔐 Change Confidentiality',
+      `<p style="color: var(--text-secondary); margin-bottom: 1rem;">Update the security level of this file. Cannot be exceeded by users lacking corresponding clearance.</p>
+       <div class="form-group">
+         <label for="change-security">New Confidentiality Level</label>
+         <select id="change-security" class="form-select">
+           <option value="low" ${currentLevel === 'low' ? 'selected' : ''}>🟢 Low</option>
+           <option value="medium" ${currentLevel === 'medium' ? 'selected' : ''}>🟡 Medium</option>
+           <option value="high" ${currentLevel === 'high' ? 'selected' : ''}>🔴 High</option>
+         </select>
+       </div>`,
+      `<button class="btn btn-secondary" onclick="Components.closeModal()">Cancel</button>
+       <button class="btn btn-primary" onclick="Dashboard.submitChangeSecurity('${fileId}')">Save Selection</button>`
+    );
+  };
+
+  const submitChangeSecurity = async (fileId) => {
+    const securityLevel = document.getElementById('change-security').value;
+    Components.closeModal();
+    Components.showLoading('Updating...');
+    try {
+      await API.patch(`/file/${fileId}/security`, { securityLevel });
+      Components.showToast('Confidentiality level updated!', 'success');
       loadTabContent('files');
     } catch (err) {
       Components.showToast(err.message, 'error');
@@ -746,7 +777,7 @@ const Dashboard = (() => {
     render, init, switchTab, toggleSidebar,
     showUploadModal, submitUpload,
     downloadFile, deleteFile, confirmDelete,
-    modifyFile, submitModify,
+    modifyFile, submitModify, showChangeSecurityModal, submitChangeSecurity,
     approveUser, rejectUser, changePermission, showJoinModal, submitJoin,
     logout,
   };

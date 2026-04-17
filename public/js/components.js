@@ -120,6 +120,12 @@ const Components = (() => {
 
     let actions = `<button class="btn btn-sm btn-primary" onclick="Dashboard.downloadFile('${file.id}', '${file.originalName}')">⬇ Download</button>`;
 
+    if (isOwner) {
+      actions += `
+        <button class="btn btn-sm btn-secondary" onclick="Dashboard.showChangeSecurityModal('${file.id}', '${file.securityLevel}')">🔐 Level</button>
+      `;
+    }
+
     if (canEdit || isOwner) {
       actions += `
         <button class="btn btn-sm btn-secondary" onclick="Dashboard.modifyFile('${file.id}')">✏️ Modify</button>

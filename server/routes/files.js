@@ -55,8 +55,8 @@ router.post(
 
       const { securityLevel = 'medium', ownerId: reqOwnerId } = req.body;
 
-      // Determine the owner ID
       let ownerId;
+      let finalSecurityLevel = securityLevel;
       if (req.user.role === 'owner') {
         ownerId = req.user.id;
       } else {
@@ -73,13 +73,8 @@ router.post(
           return res.status(403).json({ error: 'You do not have editor access.' });
         }
 
-        const levelValues = { low: 1, medium: 2, high: 3 };
-        const userLevel = levelValues[membership.permissionLevel] || 1;
-        const reqLevel = levelValues[securityLevel] || 2;
-        if (reqLevel > userLevel) {
-          return res.status(403).json({ error: 'Cannot upload a file with security level higher than your permission.' });
-        }
-        
+        // Force uploaded file to match editor's permission level
+        finalSecurityLevel = membership.permissionLevel || 'low';
         ownerId = reqOwnerId;
       }
 
@@ -114,7 +109,7 @@ router.post(
         originalName: req.file.originalname,
         fileType: ext,
         fileSize: req.file.size,
-        securityLevel,
+        securityLevel: finalSecurityLevel,
         iv,
       });
 
@@ -384,6 +379,47 @@ router.put(
     }
   }
 );
+
+// ─── Modify Confidentiality Level (Owner Only) ─────────────────
+// PATCH /api/file/:id/security
+// Updates the securityLevel of the file without re-uploading
+router.patch('/file/:id/security', authenticate, async (req, res) => {
+  try {
+    if (req.user.role !== 'owner') {
+      return res.status(403).json({ error: 'Only owners can modify file confidentiality.' });
+    }
+
+    const { securityLevel } = req.body;
+    if (!['low', 'medium', 'high'].includes(securityLevel)) {
+      return res.status(400).json({ error: 'Invalid security level.' });
+    }
+
+    const file = await File.findById(req.params.id);
+    if (!file) {
+      return res.status(404).json({ error: 'File not found.' });
+    }
+
+    if (file.ownerId.toString() !== req.user.id) {
+      return res.status(403).json({ error: 'You do not own this file.' });
+    }
+
+    file.securityLevel = securityLevel;
+    await file.save();
+
+    await ActivityLog.create({
+      userId: req.user.id,
+      userName: req.user.uid,
+      action: 'edit',
+      fileId: file._id,
+      fileName: file.originalName,
+    });
+
+    res.json({ message: 'File confidentiality updated.', securityLevel });
+  } catch (error) {
+    console.error('Modify security error:', error);
+    res.status(500).json({ error: 'Failed to update confidentiality.' });
+  }
+});
 
 // (Removed permissions endpoints as they are no longer used)
 

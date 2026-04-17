@@ -50,6 +50,15 @@ const API = (() => {
     return handleResponse(res);
   };
 
+  const patch = async (path, body) => {
+    const res = await fetch(`${BASE}${path}`, {
+      method: 'PATCH',
+      headers: headers(),
+      body: JSON.stringify(body),
+    });
+    return handleResponse(res);
+  };
+
   const del = async (path) => {
     const res = await fetch(`${BASE}${path}`, {
       method: 'DELETE',
@@ -120,5 +129,5 @@ const API = (() => {
 
   const isLoggedIn = () => !!getToken();
 
-  return { get, post, put, del, upload, uploadPut, download, saveAuth, getUser, clearAuth, isLoggedIn };
+  return { get, post, put, patch, del, upload, uploadPut, download, saveAuth, getUser, clearAuth, isLoggedIn };
 })();
