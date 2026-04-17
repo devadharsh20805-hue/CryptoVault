@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Secure multi-user file sharing system with encryption and role-based access control",
   "main": "server/server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node server/server.js",
     "dev": "nodemon server/server.js"
