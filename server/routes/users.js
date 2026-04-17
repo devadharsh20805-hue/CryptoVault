@@ -26,6 +26,7 @@ router.get('/admin/users', authenticate, authorize('owner'), async (req, res) =>
         uid: user.uid,
         status: membership.status,
         permissionLevel: membership.permissionLevel,
+        role: membership.role,
         createdAt: user.createdAt,
         joinedAt: membership.joinedAt
       };
@@ -74,11 +75,15 @@ router.get('/admin/pending', authenticate, authorize('owner'), async (req, res) 
 // Owner only — approves a pending user and assigns permissionLevel
 router.post('/approve-user', authenticate, authorize('owner'), async (req, res) => {
   try {
-    const { userId, permissionLevel } = req.body;
+    const { userId, permissionLevel, role = 'reader' } = req.body;
 
     // Validate permissionLevel
     if (!['low', 'medium', 'high'].includes(permissionLevel)) {
       return res.status(400).json({ error: 'Permission level must be low, medium, or high.' });
+    }
+
+    if (!['reader', 'editor'].includes(role)) {
+      return res.status(400).json({ error: 'Role must be reader or editor.' });
     }
 
     // Find the pending user
@@ -100,14 +105,16 @@ router.post('/approve-user', authenticate, authorize('owner'), async (req, res) 
     // Approve user
     membership.status = 'active';
     membership.permissionLevel = permissionLevel;
+    membership.role = role;
     await user.save();
 
     res.json({
-      message: `User "${user.uid}" approved with ${permissionLevel} permission.`,
+      message: `User "${user.uid}" approved with ${permissionLevel} permission and ${role} role.`,
       user: {
         id: user._id,
         uid: user.uid,
         permissionLevel: membership.permissionLevel,
+        role: membership.role,
         status: membership.status,
       },
     });
@@ -154,11 +161,15 @@ router.post('/reject-user', authenticate, authorize('owner'), async (req, res) =
 // Owner only — change an active user's permissionLevel
 router.put('/admin/users/:userId/permission', authenticate, authorize('owner'), async (req, res) => {
   try {
-    const { permissionLevel } = req.body;
+    const { permissionLevel, role } = req.body;
     const { userId } = req.params;
 
-    if (!['low', 'medium', 'high'].includes(permissionLevel)) {
+    if (permissionLevel && !['low', 'medium', 'high'].includes(permissionLevel)) {
       return res.status(400).json({ error: 'Permission level must be low, medium, or high.' });
+    }
+
+    if (role && !['reader', 'editor'].includes(role)) {
+      return res.status(400).json({ error: 'Role must be reader or editor.' });
     }
 
     const user = await User.findById(userId);
@@ -171,15 +182,17 @@ router.put('/admin/users/:userId/permission', authenticate, authorize('owner'), 
       return res.status(403).json({ error: 'User is not in your system.' });
     }
 
-    membership.permissionLevel = permissionLevel;
+    if (permissionLevel) membership.permissionLevel = permissionLevel;
+    if (role) membership.role = role;
     await user.save();
 
     res.json({
-      message: `User "${user.uid}" permission updated to ${permissionLevel}.`,
+      message: `User "${user.uid}" updated.`,
       user: {
         id: user._id,
         uid: user.uid,
         permissionLevel: membership.permissionLevel,
+        role: membership.role,
       },
     });
   } catch (error) {

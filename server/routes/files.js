@@ -46,7 +46,6 @@ const upload = multer({
 router.post(
   '/upload',
   authenticate,
-  authorize('owner'),
   upload.single('file'),
   async (req, res) => {
     try {
@@ -54,10 +53,35 @@ router.post(
         return res.status(400).json({ error: 'No file provided.' });
       }
 
-      const { securityLevel = 'medium' } = req.body;
+      const { securityLevel = 'medium', ownerId: reqOwnerId } = req.body;
 
       // Determine the owner ID
-      const ownerId = req.user.id;
+      let ownerId;
+      if (req.user.role === 'owner') {
+        ownerId = req.user.id;
+      } else {
+        if (!reqOwnerId) {
+          return res.status(400).json({ error: 'ownerId is required for user uploads.' });
+        }
+        
+        const userDoc = await User.findById(req.user.id);
+        const membership = userDoc.memberships.find(
+          m => m.ownerId.toString() === reqOwnerId && m.status === 'active'
+        );
+        
+        if (!membership || membership.role !== 'editor') {
+          return res.status(403).json({ error: 'You do not have editor access.' });
+        }
+
+        const levelValues = { low: 1, medium: 2, high: 3 };
+        const userLevel = levelValues[membership.permissionLevel] || 1;
+        const reqLevel = levelValues[securityLevel] || 2;
+        if (reqLevel > userLevel) {
+          return res.status(403).json({ error: 'Cannot upload a file with security level higher than your permission.' });
+        }
+        
+        ownerId = reqOwnerId;
+      }
 
       // Encrypt the file buffer
       const { encryptedBuffer, iv } = encryptBuffer(req.file.buffer);
@@ -162,17 +186,37 @@ router.get('/files', authenticate, async (req, res) => {
       }
     }
 
+    let userDoc = null;
+    if (req.user.role === 'user') {
+      userDoc = await User.findById(req.user.id);
+    }
+
     // Strip sensitive fields from response
-    const sanitizedFiles = files.map((f) => ({
-      id: f._id,
-      originalName: f.originalName,
-      fileType: f.fileType,
-      fileSize: f.fileSize,
-      securityLevel: f.securityLevel,
-      uploadedBy: f.uploadedBy?.uid || 'Unknown',
-      uploadedAt: f.uploadedAt,
-      canEdit: req.user.role === 'owner'
-    }));
+    const sanitizedFiles = files.map((f) => {
+      let canEdit = req.user.role === 'owner';
+      
+      if (!canEdit && userDoc) {
+        const membership = userDoc.memberships.find(m => m.ownerId.toString() === f.ownerId.toString() && m.status === 'active');
+        if (membership && membership.role === 'editor') {
+          const userLevel = levelValues[membership.permissionLevel] || 1;
+          const fileLevel = levelValues[f.securityLevel] || 2;
+          if (userLevel >= fileLevel) {
+            canEdit = true;
+          }
+        }
+      }
+
+      return {
+        id: f._id,
+        originalName: f.originalName,
+        fileType: f.fileType,
+        fileSize: f.fileSize,
+        securityLevel: f.securityLevel,
+        uploadedBy: f.uploadedBy?.uid || 'Unknown',
+        uploadedAt: f.uploadedAt,
+        canEdit
+      };
+    });
 
     res.json({ files: sanitizedFiles });
   } catch (error) {

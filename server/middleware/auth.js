@@ -23,13 +23,9 @@ const authenticate = async (req, res, next) => {
       return res.status(401).json({ error: 'User not found. Token invalid.' });
     }
 
-    if (user.status !== 'active') {
-      return res.status(403).json({ error: 'Account is not active.' });
-    }
-
     // Attach user info to request
     req.user = {
-      id: user._id,
+      id: user._id.toString(),
       uid: user.uid,
       role: user.role,
       systemCode: user.systemCode,

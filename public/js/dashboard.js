@@ -169,13 +169,14 @@ const Dashboard = (() => {
     cachedFiles = data.files || [];
 
     const isOwner = user.role === 'owner';
-    const canUpload = isOwner;
+    const canUpload = isOwner || (user.memberships || []).some(m => m.status === 'active' && m.role === 'editor');
 
     let html = `
       <div class="page-header">
         <h2>${isOwner ? '📁 System Files' : '📁 Accessed Files'}</h2>
-        <div class="page-header-actions">
-          ${canUpload ? `<button class="btn btn-primary" onclick="Dashboard.showUploadModal()">⬆ Upload File</button>` : `<button class="btn btn-primary" onclick="Dashboard.showJoinModal()">🔗 Join System</button>`}
+        <div class="page-header-actions" style="display: flex; gap: 0.5rem;">
+          ${!isOwner ? `<button class="btn btn-primary" onclick="Dashboard.showJoinModal()">🔗 Join System</button>` : ''}
+          ${canUpload ? `<button class="btn btn-primary" onclick="Dashboard.showUploadModal()">⬆ Upload File</button>` : ''}
         </div>
       </div>
     `;
@@ -236,7 +237,7 @@ const Dashboard = (() => {
       const data = await API.post('/join-owner', { systemCode });
       const user = API.getUser();
       user.memberships = data.memberships;
-      API.saveAuth({ token: localStorage.getItem('token'), user });
+      API.saveAuth({ token: localStorage.getItem('cv_token'), user });
       Components.showToast('Request submitted! Waiting for approval.', 'success');
       loadTabContent('files');
     } catch (err) {
@@ -246,11 +247,27 @@ const Dashboard = (() => {
     }
   };
 
-  // ─── Upload Modal ────────────────────────────────────────
   const showUploadModal = () => {
+    const user = API.getUser();
+    const isOwner = user.role === 'owner';
+    const editorMemberships = (user.memberships || []).filter(m => m.status === 'active' && m.role === 'editor');
+
+    let systemSelectHTML = '';
+    if (!isOwner && editorMemberships.length > 0) {
+      systemSelectHTML = `
+        <div class="form-group">
+           <label for="upload-owner">Upload To System (Owner ID)</label>
+           <select id="upload-owner" class="form-select">
+             ${editorMemberships.map(m => `<option value="${m.ownerId}">${m.ownerId}</option>`).join('')}
+           </select>
+        </div>
+      `;
+    }
+
     Components.showModal(
       '⬆ Upload File',
       `<form id="upload-form">
+        ${systemSelectHTML}
         <div class="form-group">
           <label for="upload-file">Select File</label>
           <input type="file" id="upload-file" class="form-input" accept=".pdf,.jpg,.jpeg,.png,.docx,.doc,.pptx,.ppt" required>
@@ -277,6 +294,8 @@ const Dashboard = (() => {
     const fileInput = document.getElementById('upload-file');
     const securityLevel = document.getElementById('upload-security').value;
 
+    const ownerSelect = document.getElementById('upload-owner');
+
     if (!fileInput?.files[0]) {
       Components.showToast('Please select a file.', 'warning');
       return;
@@ -289,6 +308,9 @@ const Dashboard = (() => {
       const formData = new FormData();
       formData.append('file', fileInput.files[0]);
       formData.append('securityLevel', securityLevel);
+      if (ownerSelect) {
+        formData.append('ownerId', ownerSelect.value);
+      }
 
       await API.upload('/upload', formData);
       Components.showToast('File uploaded and encrypted!', 'success');
@@ -511,6 +533,10 @@ const Dashboard = (() => {
                         <option value="medium" selected>🟡 Medium</option>
                         <option value="high">🔴 High</option>
                       </select>
+                      <select id="role-${u._id}" class="form-select" style="width: 100px; padding: 0.4rem 0.6rem; font-size: 0.8rem; margin-right: 0.5rem;">
+                        <option value="reader" selected>📖 Reader</option>
+                        <option value="editor">✏️ Editor</option>
+                      </select>
                       <button class="btn btn-sm btn-success" onclick="Dashboard.approveUser('${u._id}')">✓ Approve</button>
                       <button class="btn btn-sm btn-danger" onclick="Dashboard.rejectUser('${u._id}')">✕ Reject</button>
                     </div>
@@ -538,7 +564,7 @@ const Dashboard = (() => {
               ${active.map(u => `
                 <tr>
                   <td><strong>${u.uid}</strong></td>
-                  <td><span class="badge badge-${u.permissionLevel}">${u.permissionLevel}</span></td>
+                  <td><span class="badge badge-${u.permissionLevel}">${u.permissionLevel}</span> <span class="badge badge-pending">${u.role || 'reader'}</span></td>
                   <td>${Components.formatDate(u.joinedAt)}</td>
                   <td>
                     <select class="form-select" style="width: 120px; padding: 0.4rem 0.6rem; font-size: 0.8rem;"
@@ -546,6 +572,11 @@ const Dashboard = (() => {
                       <option value="low" ${u.permissionLevel === 'low' ? 'selected' : ''}>🟢 Low</option>
                       <option value="medium" ${u.permissionLevel === 'medium' ? 'selected' : ''}>🟡 Medium</option>
                       <option value="high" ${u.permissionLevel === 'high' ? 'selected' : ''}>🔴 High</option>
+                    </select>
+                    <select class="form-select" style="width: 100px; padding: 0.4rem 0.6rem; font-size: 0.8rem; margin-top: 0.25rem;"
+                            onchange="Dashboard.changePermission('${u._id}', null, this.value)">
+                      <option value="reader" ${u.role === 'reader' ? 'selected' : ''}>📖 Reader</option>
+                      <option value="editor" ${u.role === 'editor' ? 'selected' : ''}>✏️ Editor</option>
                     </select>
                   </td>
                 </tr>
@@ -561,13 +592,14 @@ const Dashboard = (() => {
     container.innerHTML = html;
   };
 
-  // ─── Approve User ────────────────────────────────────────
   const approveUser = async (userId) => {
     const permSelect = document.getElementById(`permission-${userId}`);
+    const roleSelect = document.getElementById(`role-${userId}`);
     const permissionLevel = permSelect ? permSelect.value : 'low';
+    const role = roleSelect ? roleSelect.value : 'reader';
 
     try {
-      await API.post('/approve-user', { userId, permissionLevel });
+      await API.post('/approve-user', { userId, permissionLevel, role });
       Components.showToast(`User approved with ${permissionLevel} permission!`, 'success');
       loadTabContent('users');
       loadPendingCount();
@@ -589,10 +621,18 @@ const Dashboard = (() => {
   };
 
   // ─── Change Permission ────────────────────────────────────
-  const changePermission = async (userId, permissionLevel) => {
+  const changePermission = async (userId, permissionLevel, role) => {
     try {
-      await API.put(`/admin/users/${userId}/permission`, { permissionLevel });
-      Components.showToast(`Permission updated to ${permissionLevel}.`, 'success');
+      const payload = {};
+      if (permissionLevel) payload.permissionLevel = permissionLevel;
+      if (role) payload.role = role;
+      
+      // We need to fetch current dropdown values if they are changing only one of them.
+      // Wait, let's just make it simpler: the UI fires onchange for each independently,
+      // and we just pass the one that changed, the backend is resilient.
+      await API.put(`/admin/users/${userId}/permission`, payload);
+      Components.showToast('Access privileges updated.', 'success');
+      loadTabContent('users');
     } catch (err) {
       Components.showToast(err.message, 'error');
       loadTabContent('users');

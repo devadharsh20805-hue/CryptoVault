@@ -92,11 +92,6 @@ const Auth = (() => {
               <input type="password" id="user-confirm-password" class="form-input" placeholder="Re-enter your password" required>
             </div>
 
-            <div class="form-group">
-              <label for="user-confirm-password">Confirm Password</label>
-              <input type="password" id="user-confirm-password" class="form-input" placeholder="Re-enter your password" required>
-            </div>
-
             <button type="submit" class="btn btn-primary btn-full" id="user-submit">
               👤 Register as User
             </button>

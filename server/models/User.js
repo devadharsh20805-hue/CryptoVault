@@ -40,6 +40,11 @@ const userSchema = new mongoose.Schema({
         enum: ['low', 'medium', 'high'],
         default: 'low',
       },
+      role: {
+        type: String,
+        enum: ['reader', 'editor'],
+        default: 'reader',
+      },
       joinedAt: {
         type: Date,
         default: Date.now,

@@ -28,12 +28,7 @@ const checkFilePermission = (permissionType) => {
         return next();
       }
 
-      // Non-owners cannot edit/delete files in this new model
-      if (permissionType !== 'read') {
-        return res.status(403).json({ error: 'Only owners can modify files.' });
-      }
-
-      // Check if user has an active membership with this owner
+      // Fetch user to check memberships
       const User = require('../models/User'); // Import here to avoid circular dep if any
       const user = await User.findById(userId);
       const membership = user?.memberships.find(
@@ -43,6 +38,13 @@ const checkFilePermission = (permissionType) => {
       if (membership) {
         const userLevelVal = levelValues[membership.permissionLevel] || 1;
         const fileSecVal = levelValues[file.securityLevel] || 2; // Default to medium
+
+        // If trying to edit/delete, must be an editor
+        if (permissionType !== 'read') {
+          if (membership.role !== 'editor') {
+            return res.status(403).json({ error: 'Only owners or editors can modify files.' });
+          }
+        }
 
         if (userLevelVal >= fileSecVal) {
           req.file = file;
