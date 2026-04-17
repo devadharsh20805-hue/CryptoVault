@@ -77,10 +77,17 @@ const startServer = async () => {
     console.warn('⚠️  Cloudinary not configured:', error.message);
   }
 
-  app.listen(PORT, () => {
-    console.log(`\n🔒 CryptoVault server running on http://localhost:${PORT}`);
-    console.log(`📂 Serving frontend from: ${path.join(__dirname, '..', 'public')}\n`);
-  });
+  if (process.env.VERCEL) {
+    console.log('⚡ Running in Vercel Serverless mode');
+  } else {
+    app.listen(PORT, () => {
+      console.log(`\n🔒 CryptoVault server running on http://localhost:${PORT}`);
+      console.log(`📂 Serving frontend from: ${path.join(__dirname, '..', 'public')}\n`);
+    });
+  }
 };
 
 startServer();
+
+// Export app for Vercel Serverless
+module.exports = app;
